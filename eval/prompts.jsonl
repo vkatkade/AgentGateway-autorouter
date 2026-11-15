@@ -1,0 +1,30 @@
+{"id":"chit-1","prompt":"Thanks, that worked! Have a great weekend.","expect_model":"hydrogen","expect_thinking":"LOW"}
+{"id":"rewrite-1","prompt":"Rewrite this sentence to sound friendlier: 'Your ticket has been closed.'","expect_model":"hydrogen","expect_thinking":"LOW"}
+{"id":"extract-1","prompt":"From this text, pull out the invoice number and due date: Invoice INV-2291 is due on 12 Dec 2026 for $4,100.","expect_model":"hydrogen","expect_thinking":"LOW"}
+{"id":"lookup-1","prompt":"What's the capital of Australia?","expect_model":"hydrogen","expect_thinking":"LOW"}
+{"id":"translate-1","prompt":"Translate 'Where is the train station?' into Spanish and French.","expect_model":"hydrogen","expect_thinking":"LOW"}
+{"id":"summ-1","prompt":"Summarize this paragraph in one line: The quarterly all-hands moved to Thursday at 10am in the main auditorium; remote staff can join via the usual link.","expect_model":"hydrogen","expect_thinking":"LOW"}
+{"id":"format-1","prompt":"Convert this list to a markdown table with columns Name and Role: Ana - PM, Raj - Eng, Li - Design","expect_model":"hydrogen","expect_thinking":"LOW"}
+{"id":"classify-1","prompt":"Is this customer message about billing or shipping? 'I was charged twice for order 5521.'","expect_model":"hydrogen","expect_thinking":"LOW"}
+{"id":"email-1","prompt":"Draft a two-sentence email asking the team to submit timesheets by Friday.","expect_model":"hydrogen","expect_thinking":"LOW"}
+{"id":"faq-1","prompt":"How do I reset my password on the employee portal? The FAQ says to click 'Forgot password' and follow the email link.","expect_model":"hydrogen","expect_thinking":"LOW"}
+{"id":"explain-1","prompt":"Explain the difference between a VPC and a subnet for a new hire, in a short paragraph.","expect_model":"hydrogen","expect_thinking":"MEDIUM"}
+{"id":"compare-1","prompt":"Compare Cloud Run and GKE for a small internal API with spiky traffic. Give me the main trade-offs.","expect_model":"hydrogen","expect_thinking":"MEDIUM"}
+{"id":"code-1","prompt":"This Python service deadlocks under load. Here is the code: a ThreadPoolExecutor submits tasks that call future.result() on other tasks in the same pool of 4 workers. Find the root cause and give me a fixed version.","expect_model":"argon","expect_thinking":"HIGH"}
+{"id":"code-2","prompt":"Write a Go middleware that implements token-bucket rate limiting per API key with Redis, including tests.","expect_model":"argon","expect_thinking":"MEDIUM"}
+{"id":"code-3","prompt":"Refactor this 400-line Java class into smaller services with dependency injection and explain each change.","expect_model":"argon","expect_thinking":"MEDIUM"}
+{"id":"code-4","prompt":"Traceback (most recent call last): File app.py line 88, in handler: KeyError: 'tenant_id'. It only happens for requests coming through the gateway. What's going on and how do I fix it?","expect_model":"argon","expect_thinking":"MEDIUM"}
+{"id":"math-1","prompt":"Prove that the sum of the first n odd numbers is n squared, then generalize to the sum of the first n terms of any arithmetic sequence.","expect_model":"argon","expect_thinking":"HIGH"}
+{"id":"math-2","prompt":"A warehouse has 3 loading docks, trucks arrive as a Poisson process at 5 per hour and unloading takes an exponential 30 minutes on average. What's the expected wait time and how many docks are needed to keep it under 10 minutes?","expect_model":"argon","expect_thinking":"HIGH"}
+{"id":"plan-1","prompt":"Plan a zero-downtime migration of our 40 TB Postgres cluster from on-prem to AlloyDB, with rollback points, sequencing, and risks.","expect_model":"argon","expect_thinking":"HIGH"}
+{"id":"logic-1","prompt":"Five engineers each own one service; using these 9 clues about who owns what and who is on call which day, work out the full on-call schedule.","expect_model":"argon","expect_thinking":"HIGH"}
+{"id":"legal-1","prompt":"Review this indemnification clause and tell me whether it exposes us to uncapped liability for third-party IP claims, and how to redline it.","expect_model":"argon","expect_thinking":"HIGH"}
+{"id":"fin-1","prompt":"Using these three years of cash flows, compute NPV and IRR at an 8% discount rate and tell me whether the acquisition clears our hurdle rate.","expect_model":"argon","expect_thinking":"HIGH"}
+{"id":"sec-1","prompt":"Here are our IAM bindings and VPC-SC perimeter config. Identify any privilege-escalation paths for a compromised agent service account.","expect_model":"argon","expect_thinking":"HIGH"}
+{"id":"compliance-1","prompt":"Does storing EU customer chat transcripts in a US region for 18 months comply with GDPR given our current DPA? Walk through the analysis.","expect_model":"argon","expect_thinking":"HIGH"}
+{"id":"agent-1","system":"You are a procurement agent. Use the tools to check budget, vendor risk, and contract status before approving.","prompt":"Approve the purchase order PO-7781 for 120 laptops if everything checks out.","tools":6,"expect_model":"argon","expect_thinking":"MEDIUM"}
+{"id":"agent-2","system":"You are an SRE agent with access to logs, metrics, and deploy tools.","prompt":"Latency on checkout doubled 20 minutes ago. Investigate and roll back if a deploy caused it.","tools":7,"expect_model":"argon","expect_thinking":"HIGH"}
+{"id":"agent-3","system":"You are a helpdesk agent.","prompt":"What's the wifi password for the guest network?","tools":2,"expect_model":"hydrogen","expect_thinking":"LOW"}
+{"id":"tools-many","system":"You are an operations agent.","prompt":"Check status.","tools":12,"expect_model":"argon","expect_thinking":"LOW"}
+{"id":"gray-1","prompt":"Write a SQL query that returns the top 5 customers by total order value last month.","expect_model":"either","expect_thinking":"MEDIUM"}
+{"id":"gray-2","prompt":"Give me three name ideas for an internal tool that routes LLM requests.","expect_model":"hydrogen","expect_thinking":"LOW"}

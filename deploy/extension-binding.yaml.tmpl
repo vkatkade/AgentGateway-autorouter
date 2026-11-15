@@ -1,0 +1,13 @@
+name: ${BINDING_NAME}
+target:
+  resources:
+  - "projects/${CONSUMER_PROJECT_ID}/locations/${GATEWAY_LOCATION}/agentGateways/${AGENT_GATEWAY_NAME}"
+# Agent -> LLM egress: only calls to the Vertex AI hosts reach the router.
+matchConditions:
+- to:
+    destination:
+      hosts:
+${HOSTS_YAML}
+producerExtension: "projects/${PRODUCER_PROJECT_ID}/locations/${REGION}/producerExtensions/${PRODUCER_EXTENSION_NAME}"
+# The router is an optimization; if it's down, the agent's original request must still flow.
+failOpen: true

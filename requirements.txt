@@ -1,0 +1,6 @@
+grpcio==1.85.1
+protobuf==7.36.2
+# Prebuilt Envoy/xDS Python protos (envoy.service.ext_proc.v3, ...). Replaces the
+# upstream repo's buf generate step.
+xds-protos==1.85.1
+httpx[http2]==0.28.1
