@@ -3,3 +3,8 @@ pytest
 
 # Interactive live check (test_ir.py). The SDK needs Python 3.11+.
 google-genai>=3.2; python_version >= "3.11"
+
+# Reference test client (client/) tests
+flask>=3.0
+google-auth>=2.40
+requests>=2.32
