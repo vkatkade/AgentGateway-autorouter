@@ -5,7 +5,9 @@ excerpt in a single forward pass, so adding questions barely moves latency.
 
 Every question is a `choice`:
   * one two-option (yes/no) question per Argon criterion -> P(yes) per criterion;
-  * one three-option `thinking_level` question (LOW / MEDIUM / HIGH).
+  * one three-option `thinking_level` question (LOW / MEDIUM / HIGH), used for Hydrogen;
+  * one two-option `argon_depth` question (deep / moderate), used for Argon, where only
+    MEDIUM vs HIGH is in play and two options give more decisive probabilities.
 """
 
 from __future__ import annotations
@@ -72,11 +74,27 @@ THINKING_QUESTION = {
 }
 
 
+ARGON_DEPTH_KEY = "argon_depth"
+ARGON_DEPTH_QUESTION = {
+    "type": "choice",
+    "instructions": (
+        "Does a strong answer to the latest user message need deep, multi-step reasoning "
+        "beyond a moderate amount?"
+    ),
+    "criteria": {
+        "deep": "Hard, multi-step or long-horizon reasoning, or careful verification of a subtle result.",
+        "moderate": "A few reasoning steps or moderate analysis is enough.",
+    },
+}
+
+
 @dataclass
 class Classification:
   criteria: dict[str, float] = field(default_factory=dict)  # P(yes) per Argon criterion
   thinking_level: str | None = None  # LOW / MEDIUM / HIGH, as chosen by the model
   thinking_confidence: float = 0.0
+  thinking_probs: dict[str, float] = field(default_factory=dict)  # LOW/MEDIUM/HIGH distribution
+  p_deep: float | None = None  # P("deep") from argon_depth
   latency_ms: float = 0.0
 
 
@@ -89,7 +107,7 @@ class Classifier(Protocol):
 
 
 def build_questions(ask_criteria: bool = True) -> dict:
-  questions = {THINKING_KEY: THINKING_QUESTION}
+  questions = {THINKING_KEY: THINKING_QUESTION, ARGON_DEPTH_KEY: ARGON_DEPTH_QUESTION}
   if ask_criteria:
     for key, q in ARGON_CRITERIA.items():
       questions[key] = {
@@ -152,4 +170,12 @@ def parse_answers(data: dict, latency_ms: float = 0.0) -> Classification:
   if level in THINKING_LEVELS:
     out.thinking_level = level
     out.thinking_confidence = float(t.get("confidence", 0.0))
+  probs = {str(k).upper(): float(v) for k, v in (t.get("probabilities") or {}).items()
+           if str(k).upper() in THINKING_LEVELS}
+  if not probs and out.thinking_level:  # tolerate answers without a distribution
+    probs = {out.thinking_level: out.thinking_confidence}
+  out.thinking_probs = probs
+  deep = ((answers.get(ARGON_DEPTH_KEY) or {}).get("probabilities") or {}).get("deep")
+  if deep is not None:
+    out.p_deep = float(deep)
   return out

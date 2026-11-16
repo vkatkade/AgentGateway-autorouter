@@ -22,9 +22,9 @@ CFG = Config(gemini_api_key="test")
 
 
 class FakeClassifier:
-  def __init__(self, criteria=None, level="MEDIUM", conf=0.9, error=None):
+  def __init__(self, criteria=None, level="MEDIUM", conf=0.9, error=None, p_deep=None):
     self.criteria = criteria if criteria is not None else {"multistep_reasoning": 0.1}
-    self.level, self.conf, self.error = level, conf, error
+    self.level, self.conf, self.error, self.p_deep = level, conf, error, p_deep
     self.calls = []
 
   def classify(self, excerpt, ask_criteria=True):
@@ -32,7 +32,8 @@ class FakeClassifier:
     if self.error:
       raise ClassifierError(self.error)
     return Classification(criteria=self.criteria if ask_criteria else {},
-                          thinking_level=self.level, thinking_confidence=self.conf, latency_ms=12)
+                          thinking_level=self.level, thinking_confidence=self.conf,
+                          thinking_probs={self.level: self.conf}, p_deep=self.p_deep, latency_ms=12)
 
 
 class Ctx:  # stands in for grpc.ServicerContext
@@ -94,8 +95,9 @@ def feats(text="hi", **b):
 
 
 def test_policy_argon_when_criterion_high():
-  d = decide(CFG, HYDROGEN, feats(), FakeClassifier({"code_work": 0.9, "high_stakes": 0.2}, level="HIGH"))
+  d = decide(CFG, HYDROGEN, feats(), FakeClassifier({"code_work": 0.9, "high_stakes": 0.2}, p_deep=0.8))
   assert d.model == ARGON and d.reason == "argon:code_work" and d.thinking_level == "HIGH"
+  assert d.signals["thinking_source"] == "argon_depth"
 
 
 def test_policy_hydrogen_when_all_low():
@@ -118,9 +120,49 @@ def test_policy_classifier_error_passes_through():
   assert d.reason == "classifier_error" and not d.changes_request
 
 
-def test_policy_low_thinking_confidence_keeps_thinking():
+def test_policy_argon_level_is_always_explicit():
+  # No argon_depth answer and a low-confidence 3-way answer: Argon still gets MEDIUM (its default).
   d = decide(CFG, HYDROGEN, feats(), FakeClassifier({"code_work": 0.9}, conf=0.3))
-  assert d.model == ARGON and d.thinking_level is None
+  assert d.model == ARGON and d.thinking_level == "MEDIUM"
+  assert d.signals["thinking_source"] == "argon_default"
+
+
+@pytest.mark.parametrize("p_deep,level", [(0.55, "HIGH"), (0.54, "MEDIUM"), (0.1, "MEDIUM")])
+def test_argon_depth_threshold(p_deep, level):
+  d = decide(CFG, HYDROGEN, feats(), FakeClassifier({"code_work": 0.9}, p_deep=p_deep))
+  assert d.thinking_level == level
+
+
+@pytest.mark.parametrize("crit", ["multistep_reasoning", "high_stakes"])
+def test_argon_criterion_floor_raises_to_high(crit):
+  d = decide(CFG, HYDROGEN, feats(), FakeClassifier({crit: 0.86}, p_deep=0.1))
+  assert d.thinking_level == "HIGH" and d.signals["thinking_source"] == f"floor:{crit}"
+  below = decide(CFG, HYDROGEN, feats(), FakeClassifier({crit: 0.84}, p_deep=0.1))
+  assert below.thinking_level == "MEDIUM"
+
+
+def test_agent_thinking_level_raise_only_and_override():
+  agent_high = json.loads(body("debug", generationConfig={"thinkingConfig": {"thinkingLevel": "HIGH"}}))
+  f = vertex.extract_features(agent_high)
+  assert f.agent_thinking_level == "HIGH"
+  d = decide(CFG, HYDROGEN, f, FakeClassifier({"code_work": 0.9}, p_deep=0.1))
+  assert d.thinking_level == "HIGH" and d.signals["thinking_source"] == "agent"
+  cfg = Config(gemini_api_key="t", thinking_respect_agent="override")
+  d = decide(cfg, HYDROGEN, f, FakeClassifier({"code_work": 0.9}, p_deep=0.1))
+  assert d.thinking_level == "MEDIUM"
+
+
+def test_argon_levels_clamp_high():
+  cfg = Config(gemini_api_key="t", argon_levels=("LOW", "MEDIUM"))
+  d = decide(cfg, HYDROGEN, feats(), FakeClassifier({"code_work": 0.9}, p_deep=0.9))
+  assert d.thinking_level == "MEDIUM"
+
+
+@pytest.mark.parametrize("level,conf,want", [("LOW", 0.6, "LOW"), ("HIGH", 0.6, "HIGH"),
+                                             ("LOW", 0.4, "MEDIUM"), ("MEDIUM", 0.4, "MEDIUM")])
+def test_hydrogen_level_mapping(level, conf, want):
+  d = decide(CFG, ARGON, feats(), FakeClassifier({"code_work": 0.05}, level=level, conf=conf))
+  assert d.model == HYDROGEN and d.thinking_level == want
 
 
 def test_policy_unroutable_model_untouched():
@@ -138,7 +180,7 @@ def test_policy_long_context_forces_argon_and_skips_criteria():
 def test_policy_many_tools_survives_classifier_error():
   tools = [{"functionDeclarations": [{"name": f"t{i}"} for i in range(9)]}]
   d = decide(CFG, HYDROGEN, feats(tools=tools), FakeClassifier(error="boom"))
-  assert d.model == ARGON and d.reason == "many_tools" and d.thinking_level is None
+  assert d.model == ARGON and d.reason == "many_tools" and d.thinking_level == "MEDIUM"
 
 
 def test_thinking_clamped_to_supported_levels():
@@ -268,6 +310,17 @@ def test_decisions_client_request_and_parse():
   assert c.thinking_level == "MEDIUM" and c.thinking_confidence == 0.7
 
 
+def test_parse_answers_reads_argon_depth_and_distribution():
+  c = parse_answers({"answers": {
+      "argon_depth": {"type": "choice", "choice": "deep", "confidence": 0.7,
+                      "probabilities": {"deep": 0.7, "moderate": 0.3}},
+      "thinking_level": {"type": "choice", "choice": "MEDIUM", "confidence": 0.5,
+                         "probabilities": {"LOW": 0.2, "MEDIUM": 0.5, "HIGH": 0.3}}}})
+  assert c.p_deep == 0.7 and c.thinking_probs == {"LOW": 0.2, "MEDIUM": 0.5, "HIGH": 0.3}
+  assert set(build_questions()) >= {"argon_depth", "thinking_level"}
+  assert set(build_questions(ask_criteria=False)) == {"argon_depth", "thinking_level"}
+
+
 def test_parse_answers_ignores_bad_shapes():
   c = parse_answers({"answers": {"code_work": {"choice": "yes"},  # no probabilities
                                  "thinking_level": {"choice": "MINIMAL", "confidence": 0.9}}})
@@ -304,6 +357,6 @@ def test_grpc_round_trip():
     out = list(stub.Process(iter(msgs)))
     hs = set_headers(out[1].request_body.response.header_mutation)
     assert hs[":path"].endswith(f"{ARGON}:generateContent")
-    assert json.loads(out[1].request_body.response.body_mutation.body)["generationConfig"]["thinkingConfig"]["thinkingLevel"] == "LOW"
+    assert json.loads(out[1].request_body.response.body_mutation.body)["generationConfig"]["thinkingConfig"]["thinkingLevel"] == "MEDIUM"
   finally:
     server.stop(0)

@@ -67,6 +67,7 @@ class Features:
   last_turn_kind: str  # "user_text" | "tool_result" | "model" | "empty"
   system_text: str
   last_user_text: str
+  agent_thinking_level: str | None = None  # thinkingLevel the agent already sent, upper-cased
 
 
 def extract_features(body: dict) -> Features:
@@ -115,7 +116,15 @@ def extract_features(body: dict) -> Features:
         last_user_text = text
         break
 
+  gc = _get(body, "generationConfig", "generation_config") or {}
+  tc = _get(gc, "thinkingConfig", "thinking_config") if isinstance(gc, dict) else None
+  agent_level = None
+  if isinstance(tc, dict):
+    lvl = str(_get(tc, "thinkingLevel", "thinking_level") or "").upper()
+    agent_level = lvl if lvl in ("LOW", "MEDIUM", "HIGH") else None
+
   return Features(
+      agent_thinking_level=agent_level,
       turns=len(contents),
       tool_declarations=decls,
       media_parts=media,
