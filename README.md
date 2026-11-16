@@ -236,11 +236,24 @@ Every classifier question is a Decisions API **`choice`** question, all scored i
 | `high_stakes` | Legal, financial, security, or compliance analysis where subtle errors cause harm |
 | `agentic_tool_heavy` | Orchestrating several tools or reasoning over complex tool results |
 
-**Thinking level** comes from a three-option `thinking_level` choice (`LOW` / `MEDIUM` / `HIGH`, described as
-Little / Some / Deep reasoning). The router uses the chosen option, so the level is always exactly one of the three.
-It's applied only when its confidence is ≥ `THINKING_MIN_CONFIDENCE` (0.5). It's clamped to the levels the chosen
-model supports, and ties round up. Otherwise the agent's own thinking config is kept.
-`MINIMAL` is never emitted, because Gemini 4 models don't support it.
+**Thinking level** is chosen per tier, from two more Choice questions in the same call
+(`autorouter/policy.py`, `choose_level`):
+
+| Routed to | Rule | `thinking_source` in the log |
+|---|---|---|
+| **Argon** | Always an explicit level (Argon's own default is `MEDIUM`). `HIGH` if P(`deep`) from the two-option `argon_depth` question ≥ `ARGON_HIGH_AT` (0.55), else `MEDIUM`. | `argon_depth` (or `argon_default` if the question wasn't answered) |
+| **Argon** floor | `multistep_reasoning` or `high_stakes` with P(yes) ≥ `THINKING_FLOOR_HIGH_AT` (0.85) → at least `HIGH`. | `floor:<criterion>` |
+| **Argon** (deterministic: long context / many tools) | `HIGH` or `MEDIUM` from `argon_depth` as above; `MEDIUM` if the classifier call failed. | `argon_depth` / `argon_default` |
+| **Hydrogen** | From the three-option `thinking_level` choice: `LOW` if P(LOW) ≥ `THINKING_MIN_CONFIDENCE` (0.5), `HIGH` if P(HIGH) ≥ 0.5, otherwise `MEDIUM`. | `hydrogen_choice` |
+| Either tier | With `THINKING_RESPECT_AGENT=raise_only` (default) the level is never below the agent's own `thinkingLevel`; `override` lets the router lower it. | `agent` |
+
+Why two questions: for Argon only `MEDIUM` vs `HIGH` is in play, and a two-option question gives far more decisive
+probabilities than a three-way one. With a single three-way question, Argon-bound prompts often split between
+`MEDIUM` and `HIGH` below the confidence bar, so no level was set and Argon silently ran at its default.
+
+The level is clamped to `ARGON_THINKING_LEVELS` / `HYDROGEN_THINKING_LEVELS` (ties round up), `thinkingBudget` is
+removed, and the level is returned in `x-autorouter-thinking`. `MINIMAL` is never emitted, because Gemini 4
+models don't support it.
 
 ---
 
@@ -265,7 +278,7 @@ git clone <this repo> agw-autorouter && cd agw-autorouter
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 
-python -m pytest -q                                      # 35 tests, no network needed
+python -m pytest -q                                      # 47 tests, no network needed
 GEMINI_API_KEY=... PORT=8080 python -m autorouter.server  # plaintext gRPC on :8080
 GEMINI_API_KEY=... python test_ir.py                      # live Decisions API, interactive (Python 3.11+)
 ```
@@ -287,6 +300,10 @@ P(argon). It also reports:
 * **Coverage**: the share of requests it acted on rather than passing through.
 * **Thinking accuracy**, and **p50/p95 classifier latency** against the 250 ms timeout.
 * With `--sweep`, accuracy and coverage for a grid of threshold pairs.
+
+The thinking-level knobs (`ARGON_HIGH_AT`, `THINKING_FLOOR_HIGH_AT`) are worth checking the same way: compare the
+reported thinking accuracy against `expect_thinking`, and remember that `HIGH` on Argon costs more and responds
+more slowly.
 
 Add a few dozen real, anonymized prompts from your agents to the JSONL file. The format is
 `{"id", "prompt", "system"?, "tools"?, "expect_model", "expect_thinking"}`. Pick thresholds that give
@@ -423,7 +440,10 @@ Set as Cloud Run environment variables. The defaults below are in `autorouter/co
 | `DECISIONS_TIMEOUT_MS` | `250` | Hard timeout on the classifier call |
 | `ARGON_THRESHOLD` | `0.65` | Max criterion probability at or above which a request goes to Argon |
 | `HYDROGEN_THRESHOLD` | `0.35` | Max criterion probability at or below which a request goes to Hydrogen |
-| `THINKING_MIN_CONFIDENCE` | `0.5` | Minimum confidence to set a thinking level |
+| `THINKING_MIN_CONFIDENCE` | `0.5` | Hydrogen: probability an option needs before `LOW` or `HIGH` is chosen (else `MEDIUM`) |
+| `ARGON_HIGH_AT` | `0.55` | Argon: P(`deep`) at or above which the level is `HIGH` (else `MEDIUM`) |
+| `THINKING_FLOOR_HIGH_AT` | `0.85` | Argon: `multistep_reasoning` / `high_stakes` probability that forces at least `HIGH` |
+| `THINKING_RESPECT_AGENT` | `raise_only` | `raise_only`: never below the agent's own `thinkingLevel`; `override`: the router decides |
 | `LONG_CONTEXT_TOKENS` | `32000` | Estimated input size that forces Argon |
 | `MANY_TOOLS` | `8` | Function-declaration count that forces Argon |
 | `EXCERPT_MAX_CHARS` | `6000` | Size cap on what the classifier sees |
@@ -447,8 +467,8 @@ Changing it is the most effective tuning lever after the thresholds. Re-run the 
  "requested_model":"gemini-3.8-flash","routed_model":"gemini-4-argon","thinking_level":"HIGH",
  "reason":"argon:code_work",
  "signals":{"criteria":{"multistep_reasoning":0.41,"code_work":0.93,"high_stakes":0.04,"agentic_tool_heavy":0.12},
-            "p_argon":0.93,"thinking_choice":"HIGH","thinking_confidence":0.68,"classifier_ms":118.4,
-            "target_model":"gemini-4-argon"},
+            "p_argon":0.93,"thinking_choice":"MEDIUM","p_deep":0.71,"thinking_confidence":0.52,
+            "classifier_ms":118.4,"target_model":"gemini-4-argon","thinking_source":"argon_depth"},
  "streaming":false,"est_input_tokens":812,"tool_declarations":2,"total_ms":121.0}
 ```
 

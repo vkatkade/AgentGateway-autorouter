@@ -21,8 +21,8 @@ class _Fake:
     self.criteria, self.level = criteria, level
 
   def classify(self, excerpt, ask_criteria=True):
-    return Classification(criteria=self.criteria, thinking_level=self.level,
-                          thinking_confidence=0.9, latency_ms=1)
+    return Classification(criteria=self.criteria, thinking_level=self.level, thinking_confidence=0.9,
+                          thinking_probs={self.level: 0.9}, p_deep=0.9, latency_ms=1)
 
 
 @pytest.fixture

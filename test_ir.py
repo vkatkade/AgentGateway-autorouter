@@ -19,7 +19,7 @@ from google import genai
 
 from autorouter.classifier import build_questions, parse_answers
 from autorouter.config import Config
-from autorouter.policy import _thinking
+from autorouter.policy import choose_level
 
 
 def _plain(obj):
@@ -64,13 +64,13 @@ def decide_and_print(client, cfg: Config, prompt: str) -> None:
     return
   print(f"  -> {'ARGON' if model == cfg.argon_model else 'HYDROGEN'}: {model}")
 
-  level = _thinking(cfg, c, model)
+  if c.p_deep is not None:
+    print(f"  argon_depth P(deep)={c.p_deep:.3f}  (HIGH on Argon >= {cfg.argon_high_at})")
+  level, source = choose_level(cfg, c, model, agent=None)
   if level:
-    print(f"  -> thinkingLevel={level} (model chose {c.thinking_level}, "
-          f"confidence {c.thinking_confidence:.2f})")
+    print(f"  -> thinkingLevel={level} (source: {source})")
   else:
-    print(f"  -> thinkingLevel unchanged (choice {c.thinking_level}, confidence "
-          f"{c.thinking_confidence:.2f} < {cfg.thinking_min_confidence})")
+    print("  -> thinkingLevel unchanged (no thinking signal)")
 
 
 def main() -> None:

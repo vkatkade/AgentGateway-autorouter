@@ -20,6 +20,10 @@ export ARGON_MODEL="${ARGON_MODEL:-gemini-4-argon}"
 export HYDROGEN_MODEL="${HYDROGEN_MODEL:-gemini-3.8-flash}"   # swap to the Hydrogen ID at launch
 export DECISIONS_TIMEOUT_MS="${DECISIONS_TIMEOUT_MS:-250}"
 export SHADOW_MODE="${SHADOW_MODE:-true}"                     # start in shadow; flip to false to route
+# Thinking level (see README section 3)
+export ARGON_HIGH_AT="${ARGON_HIGH_AT:-0.55}"
+export THINKING_FLOOR_HIGH_AT="${THINKING_FLOOR_HIGH_AT:-0.85}"
+export THINKING_RESPECT_AGENT="${THINKING_RESPECT_AGENT:-raise_only}"
 
 # Producer networking: regional internal ALB -> serverless NEG -> Cloud Run, published via PSC
 export NETWORK="${NETWORK:-default}"

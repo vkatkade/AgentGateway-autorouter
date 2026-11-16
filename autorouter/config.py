@@ -57,6 +57,9 @@ class Config:
   argon_threshold: float = 0.65     # max P(argon criterion) >= this -> Argon
   hydrogen_threshold: float = 0.35  # max P(argon criterion) <= this -> Hydrogen
   thinking_min_confidence: float = 0.5
+  argon_high_at: float = 0.55            # P(deep) >= this -> HIGH on Argon, else MEDIUM
+  thinking_floor_high_at: float = 0.85   # multistep/high-stakes P(yes) >= this -> at least HIGH on Argon
+  thinking_respect_agent: str = "raise_only"  # or "override": may set a level below the agent's
   long_context_tokens: int = 32_000  # deterministic Argon rule
   many_tools: int = 8                # deterministic Argon rule
 
@@ -98,6 +101,9 @@ class Config:
         argon_threshold=_env_float("ARGON_THRESHOLD", cls.argon_threshold),
         hydrogen_threshold=_env_float("HYDROGEN_THRESHOLD", cls.hydrogen_threshold),
         thinking_min_confidence=_env_float("THINKING_MIN_CONFIDENCE", cls.thinking_min_confidence),
+        argon_high_at=_env_float("ARGON_HIGH_AT", cls.argon_high_at),
+        thinking_floor_high_at=_env_float("THINKING_FLOOR_HIGH_AT", cls.thinking_floor_high_at),
+        thinking_respect_agent=_env("THINKING_RESPECT_AGENT", cls.thinking_respect_agent).lower(),
         long_context_tokens=_env_int("LONG_CONTEXT_TOKENS", cls.long_context_tokens),
         many_tools=_env_int("MANY_TOOLS", cls.many_tools),
         excerpt_max_chars=_env_int("EXCERPT_MAX_CHARS", cls.excerpt_max_chars),
