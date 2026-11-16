@@ -1,2 +1,5 @@
 -r requirements.txt
 pytest
+
+# Interactive live check (test_ir.py). The SDK needs Python 3.11+.
+google-genai>=3.2; python_version >= "3.11"

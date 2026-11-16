@@ -1,7 +1,11 @@
-"""Gemini Decisions API classifier.
+"""Gemini Decisions API classifier (Choice questions only).
 
 One POST to /v1beta/decisions scores all routing questions against the same
 excerpt in a single forward pass, so adding questions barely moves latency.
+
+Every question is a `choice`:
+  * one two-option (yes/no) question per Argon criterion -> P(yes) per criterion;
+  * one three-option `thinking_level` question (LOW / MEDIUM / HIGH).
 """
 
 from __future__ import annotations
@@ -15,46 +19,63 @@ import httpx
 
 from autorouter.config import Config
 
-# Each yes/no question is one Argon criterion. Keys are never shown to the model.
-ARGON_CRITERIA: dict[str, str] = {
-    "multistep_reasoning": (
-        "Does answering the latest user message require multi-step reasoning, planning, "
-        "mathematics, or careful logical deduction, rather than a direct lookup, a short "
-        "rewrite, simple extraction, or small talk?"
-    ),
-    "code_work": (
-        "Does the latest user message require writing non-trivial code, debugging, "
-        "root-causing an error or stack trace, or reviewing or refactoring code?"
-    ),
-    "high_stakes": (
-        "Is this a high-stakes legal, financial, security, or compliance analysis where a "
-        "subtle mistake could cause material harm?"
-    ),
-    "agentic_tool_heavy": (
-        "Is this an agent step that must orchestrate several tools or reason over long, "
-        "complex tool results to decide what to do next?"
-    ),
+# Each two-option question is one Argon criterion. Keys are never shown to the model.
+ARGON_CRITERIA: dict[str, dict] = {
+    "multistep_reasoning": {
+        "instructions": (
+            "Does answering the latest user message require multi-step reasoning, planning, "
+            "mathematics, or careful logical deduction, rather than a direct lookup, a short "
+            "rewrite, simple extraction, or small talk?"
+        ),
+        "yes": "Several dependent reasoning, planning or calculation steps.",
+        "no": "A direct answer, lookup, rewrite, summary or chat.",
+    },
+    "code_work": {
+        "instructions": (
+            "Does the latest user message require writing non-trivial code, debugging, "
+            "root-causing an error or stack trace, or reviewing or refactoring code?"
+        ),
+        "yes": "Writing, fixing, refactoring or reviewing real code.",
+        "no": "No code, or only a trivial snippet.",
+    },
+    "high_stakes": {
+        "instructions": (
+            "Is this a high-stakes legal, financial, security, or compliance analysis where a "
+            "subtle mistake could cause material harm?"
+        ),
+        "yes": "Legal, financial, security or similar consequential analysis.",
+        "no": "Everyday, low-consequence content.",
+    },
+    "agentic_tool_heavy": {
+        "instructions": (
+            "Is this an agent step that must orchestrate several tools or reason over long, "
+            "complex tool results to decide what to do next?"
+        ),
+        "yes": "Coordinating several tools or chained tool calls.",
+        "no": "No tools, or a single simple tool call.",
+    },
 }
 
 THINKING_LEVELS = ("LOW", "MEDIUM", "HIGH")
+THINKING_KEY = "thinking_level"
 THINKING_QUESTION = {
-    "type": "score",
+    "type": "choice",
     "instructions": (
         "How much deliberate reasoning does a strong model need before it answers the "
         "latest user message well?"
     ),
-    "criteria": [
-        "Little: the answer is direct, routine, or a lookup.",
-        "Some: a few reasoning steps or moderate analysis.",
-        "Deep: hard, multi-step, or long-horizon reasoning.",
-    ],
+    "criteria": {
+        "LOW": "Little: the answer is direct, routine, or a lookup.",
+        "MEDIUM": "Some: a few reasoning steps or moderate analysis.",
+        "HIGH": "Deep: hard, multi-step, or long-horizon reasoning.",
+    },
 }
 
 
 @dataclass
 class Classification:
   criteria: dict[str, float] = field(default_factory=dict)  # P(yes) per Argon criterion
-  thinking_score: float | None = None  # 0..2, may fall between levels
+  thinking_level: str | None = None  # LOW / MEDIUM / HIGH, as chosen by the model
   thinking_confidence: float = 0.0
   latency_ms: float = 0.0
 
@@ -68,10 +89,14 @@ class Classifier(Protocol):
 
 
 def build_questions(ask_criteria: bool = True) -> dict:
-  questions = {"thinking_depth": THINKING_QUESTION}
+  questions = {THINKING_KEY: THINKING_QUESTION}
   if ask_criteria:
-    for key, text in ARGON_CRITERIA.items():
-      questions[key] = {"type": "noul", "instructions": text}
+    for key, q in ARGON_CRITERIA.items():
+      questions[key] = {
+          "type": "choice",
+          "instructions": q["instructions"],
+          "criteria": {"yes": q["yes"], "no": q["no"]},
+      }
   return questions
 
 
@@ -115,14 +140,16 @@ class DecisionsClassifier:
 
 
 def parse_answers(data: dict, latency_ms: float = 0.0) -> Classification:
+  """Choice answers: {"choice": ..., "confidence": ..., "probabilities": {option: p}}."""
   answers = data.get("answers") or {}
   out = Classification(latency_ms=latency_ms)
   for key in ARGON_CRITERIA:
-    a = answers.get(key)
-    if a and "noul" in a:
-      out.criteria[key] = float(a["noul"])
-  t = answers.get("thinking_depth")
-  if t and "score" in t:
-    out.thinking_score = float(t["score"])
+    probs = (answers.get(key) or {}).get("probabilities") or {}
+    if "yes" in probs:
+      out.criteria[key] = float(probs["yes"])
+  t = answers.get(THINKING_KEY) or {}
+  level = str(t.get("choice", "")).upper()
+  if level in THINKING_LEVELS:
+    out.thinking_level = level
     out.thinking_confidence = float(t.get("confidence", 0.0))
   return out

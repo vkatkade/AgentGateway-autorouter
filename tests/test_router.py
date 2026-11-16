@@ -10,7 +10,8 @@ from envoy.service.ext_proc.v3 import external_processor_pb2 as pb
 from envoy.service.ext_proc.v3 import external_processor_pb2_grpc as pb_grpc
 
 from autorouter import vertex
-from autorouter.classifier import Classification, ClassifierError, DecisionsClassifier, build_questions
+from autorouter.classifier import (Classification, ClassifierError, DecisionsClassifier,
+                                   build_questions, parse_answers)
 from autorouter.config import Config
 from autorouter.policy import decide
 from autorouter.server import AutoRouterCallout
@@ -21,9 +22,9 @@ CFG = Config(gemini_api_key="test")
 
 
 class FakeClassifier:
-  def __init__(self, criteria=None, score=1.0, conf=0.9, error=None):
+  def __init__(self, criteria=None, level="MEDIUM", conf=0.9, error=None):
     self.criteria = criteria if criteria is not None else {"multistep_reasoning": 0.1}
-    self.score, self.conf, self.error = score, conf, error
+    self.level, self.conf, self.error = level, conf, error
     self.calls = []
 
   def classify(self, excerpt, ask_criteria=True):
@@ -31,7 +32,7 @@ class FakeClassifier:
     if self.error:
       raise ClassifierError(self.error)
     return Classification(criteria=self.criteria if ask_criteria else {},
-                          thinking_score=self.score, thinking_confidence=self.conf, latency_ms=12)
+                          thinking_level=self.level, thinking_confidence=self.conf, latency_ms=12)
 
 
 class Ctx:  # stands in for grpc.ServicerContext
@@ -93,17 +94,17 @@ def feats(text="hi", **b):
 
 
 def test_policy_argon_when_criterion_high():
-  d = decide(CFG, HYDROGEN, feats(), FakeClassifier({"code_work": 0.9, "high_stakes": 0.2}, score=1.8))
+  d = decide(CFG, HYDROGEN, feats(), FakeClassifier({"code_work": 0.9, "high_stakes": 0.2}, level="HIGH"))
   assert d.model == ARGON and d.reason == "argon:code_work" and d.thinking_level == "HIGH"
 
 
 def test_policy_hydrogen_when_all_low():
-  d = decide(CFG, ARGON, feats(), FakeClassifier({"code_work": 0.1, "high_stakes": 0.05}, score=0.2))
+  d = decide(CFG, ARGON, feats(), FakeClassifier({"code_work": 0.1, "high_stakes": 0.05}, level="LOW"))
   assert d.model == HYDROGEN and d.thinking_level == "LOW"
 
 
 def test_policy_same_model_only_sets_thinking():
-  d = decide(CFG, HYDROGEN, feats(), FakeClassifier({"code_work": 0.1}, score=1.1))
+  d = decide(CFG, HYDROGEN, feats(), FakeClassifier({"code_work": 0.1}, level="MEDIUM"))
   assert d.model is None and d.thinking_level == "MEDIUM" and d.changes_request
 
 
@@ -129,7 +130,7 @@ def test_policy_unroutable_model_untouched():
 
 
 def test_policy_long_context_forces_argon_and_skips_criteria():
-  cls = FakeClassifier({"code_work": 0.0}, score=2.0)
+  cls = FakeClassifier({"code_work": 0.0}, level="HIGH")
   d = decide(CFG, HYDROGEN, feats("x" * 4 * 40_000), cls)
   assert d.model == ARGON and d.reason == "long_context" and cls.calls[0][1] is False
 
@@ -142,7 +143,7 @@ def test_policy_many_tools_survives_classifier_error():
 
 def test_thinking_clamped_to_supported_levels():
   cfg = Config(gemini_api_key="t", hydrogen_levels=("LOW", "HIGH"))
-  d = decide(cfg, ARGON, feats(), FakeClassifier({"code_work": 0.0}, score=1.0))
+  d = decide(cfg, ARGON, feats(), FakeClassifier({"code_work": 0.0}, level="MEDIUM"))
   assert d.model == HYDROGEN and d.thinking_level == "HIGH"
 
 
@@ -185,7 +186,7 @@ def test_excerpt_truncates():
 # ---------------------------------------------------------------- server phases
 
 def test_server_rewrites_path_body_and_headers():
-  srv = make(FakeClassifier({"multistep_reasoning": 0.95}, score=2.0))
+  srv = make(FakeClassifier({"multistep_reasoning": 0.95}, level="HIGH"))
   h, b, r = run(srv, raw=body("prove it", generationConfig={"thinkingConfig": {"thinkingBudget": 99}}))
   assert h.mode_override.request_body_mode == ProcessingMode.BUFFERED
   resp = b.request_body.response
@@ -248,16 +249,29 @@ def test_decisions_client_request_and_parse():
     seen["key"] = request.headers["x-goog-api-key"]
     seen["json"] = json.loads(request.content)
     return httpx.Response(200, json={"answers": {
-        "code_work": {"type": "noul", "noul": 0.97, "confidence": 0.97},
-        "multistep_reasoning": {"type": "noul", "noul": 0.2, "confidence": 0.8},
-        "thinking_depth": {"type": "score", "score": 1.6, "confidence": 0.7},
+        "code_work": {"type": "choice", "choice": "yes", "confidence": 0.97,
+                      "probabilities": {"yes": 0.97, "no": 0.03}},
+        "multistep_reasoning": {"type": "choice", "choice": "no", "confidence": 0.8,
+                                "probabilities": {"no": 0.8, "yes": 0.2}},
+        "thinking_level": {"type": "choice", "choice": "MEDIUM", "confidence": 0.7,
+                           "probabilities": {"LOW": 0.1, "MEDIUM": 0.7, "HIGH": 0.2}},
     }})
 
   client = httpx.Client(transport=httpx.MockTransport(handler), headers={"x-goog-api-key": "k"})
   c = DecisionsClassifier(CFG, client=client).classify("excerpt")
   assert seen["key"] == "k" and seen["json"]["model"] == "gemini-decision-1"
-  assert set(seen["json"]["questions"]) == set(build_questions())
-  assert c.criteria["code_work"] == 0.97 and c.thinking_score == 1.6
+  questions = seen["json"]["questions"]
+  assert set(questions) == set(build_questions())
+  assert all(q["type"] == "choice" for q in questions.values())  # Choice questions only
+  assert set(questions["thinking_level"]["criteria"]) == {"LOW", "MEDIUM", "HIGH"}
+  assert c.criteria["code_work"] == 0.97 and c.criteria["multistep_reasoning"] == 0.2
+  assert c.thinking_level == "MEDIUM" and c.thinking_confidence == 0.7
+
+
+def test_parse_answers_ignores_bad_shapes():
+  c = parse_answers({"answers": {"code_work": {"choice": "yes"},  # no probabilities
+                                 "thinking_level": {"choice": "MINIMAL", "confidence": 0.9}}})
+  assert c.criteria == {} and c.thinking_level is None
 
 
 def test_decisions_client_errors_become_classifier_error():
@@ -279,7 +293,7 @@ def test_decisions_client_without_key_skips_network():
 # ---------------------------------------------------------------- real gRPC round trip
 
 def test_grpc_round_trip():
-  srv = make(FakeClassifier({"code_work": 0.99}, score=0.0), port=0)
+  srv = make(FakeClassifier({"code_work": 0.99}, level="LOW"), port=0)
   server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
   pb_grpc.add_ExternalProcessorServicer_to_server(srv._callout_server, server)
   port = server.add_insecure_port("127.0.0.1:0")

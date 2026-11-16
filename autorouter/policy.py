@@ -8,8 +8,9 @@ Rules, in order:
        <= HYDROGEN_THRESHOLD -> Hydrogen
        in between            -> pass through unchanged (not confident)
      A classifier error or timeout -> pass through unchanged.
-  4. Thinking level = round(score) if its confidence >= THINKING_MIN_CONFIDENCE,
-     clamped to the levels the chosen model supports; otherwise left as the agent sent it.
+  4. Thinking level = the `thinking_level` choice (LOW / MEDIUM / HIGH) if its confidence
+     >= THINKING_MIN_CONFIDENCE, clamped to the levels the chosen model supports (ties
+     round up); otherwise left as the agent sent it.
 """
 
 from __future__ import annotations
@@ -43,10 +44,9 @@ def _clamp_level(level: str, supported: tuple[str, ...]) -> str:
 
 
 def _thinking(cfg: Config, c: Classification, model: str) -> str | None:
-  if c.thinking_score is None or c.thinking_confidence < cfg.thinking_min_confidence:
+  if c.thinking_level not in THINKING_LEVELS or c.thinking_confidence < cfg.thinking_min_confidence:
     return None
-  idx = max(0, min(len(THINKING_LEVELS) - 1, int(c.thinking_score + 0.5)))
-  return _clamp_level(THINKING_LEVELS[idx], cfg.levels_for(model))
+  return _clamp_level(c.thinking_level, cfg.levels_for(model))
 
 
 def decide(cfg: Config, requested_model: str, f: Features, classifier: Classifier) -> Decision:
@@ -69,7 +69,7 @@ def decide(cfg: Config, requested_model: str, f: Features, classifier: Classifie
 
   signals = {
       "criteria": {k: round(v, 3) for k, v in c.criteria.items()},
-      "thinking_score": None if c.thinking_score is None else round(c.thinking_score, 3),
+      "thinking_choice": c.thinking_level,
       "thinking_confidence": round(c.thinking_confidence, 3),
       "classifier_ms": round(c.latency_ms, 1),
   }

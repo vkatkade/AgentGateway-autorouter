@@ -93,7 +93,7 @@ Make model selection a **gateway policy**, not application code. Agent Gateway a
 An extension attached there can:
 
 1. Look at the request (system instruction, latest user turn, tool count, size).
-2. Ask a purpose-built classifier, the **Decisions API**, a few calibrated yes/no questions.
+2. Ask a purpose-built classifier, the **Decisions API**, a few calibrated Choice questions.
 3. Rewrite the model and thinking level before the call reaches Vertex AI.
 
 ### Why the Decisions API
@@ -225,7 +225,9 @@ Rules are evaluated in order:
 | 7 | Probability in between (uncertain) | **Pass through unchanged** |
 | 8 | Decisions API error, safety block, or timeout | **Pass through unchanged** (rule 4 still routes to Argon) |
 
-**Argon criteria** (yes/no questions, scored in one call):
+Every classifier question is a Decisions API **`choice`** question, all scored in one call.
+
+**Argon criteria** (two-option `yes` / `no` choices; the router reads `probabilities.yes`):
 
 | Key | Asks whether the request needs… |
 |---|---|
@@ -234,7 +236,8 @@ Rules are evaluated in order:
 | `high_stakes` | Legal, financial, security, or compliance analysis where subtle errors cause harm |
 | `agentic_tool_heavy` | Orchestrating several tools or reasoning over complex tool results |
 
-**Thinking level** comes from a `score` question (Little / Some / Deep → `LOW` / `MEDIUM` / `HIGH`).
+**Thinking level** comes from a three-option `thinking_level` choice (`LOW` / `MEDIUM` / `HIGH`, described as
+Little / Some / Deep reasoning). The router uses the chosen option, so the level is always exactly one of the three.
 It's applied only when its confidence is ≥ `THINKING_MIN_CONFIDENCE` (0.5). It's clamped to the levels the chosen
 model supports, and ties round up. Otherwise the agent's own thinking config is kept.
 `MINIMAL` is never emitted, because Gemini 4 models don't support it.
@@ -262,9 +265,14 @@ git clone <this repo> agw-autorouter && cd agw-autorouter
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 
-python -m pytest -q                                      # 31 tests, no network needed
+python -m pytest -q                                      # 32 tests, no network needed
 GEMINI_API_KEY=... PORT=8080 python -m autorouter.server  # plaintext gRPC on :8080
+GEMINI_API_KEY=... python test_ir.py                      # live Decisions API, interactive (Python 3.11+)
 ```
+
+`test_ir.py` sends the exact questions the extension sends and applies the same thresholds and
+thinking-level rules, so you can try prompts against the live Decisions API before deploying.
+Read `GEMINI_API_KEY` from your shell; never put the key in a file in the repo.
 
 ### 4.3 Calibrate on your traffic (recommended before deploying)
 
@@ -391,7 +399,7 @@ Set as Cloud Run environment variables. The defaults below are in `autorouter/co
 | `SERVER_THREADS` | `64` | gRPC worker threads; each in-flight request holds one |
 | `PORT` | `8080` | Plaintext gRPC listen port |
 
-The classifier's question wording lives in `autorouter/classifier.py` (`ARGON_CRITERIA`, `THINKING_QUESTION`).
+The classifier's question wording lives in `autorouter/classifier.py` (`ARGON_CRITERIA`, `THINKING_QUESTION`; built by `build_questions()`).
 Changing it is the most effective tuning lever after the thresholds. Re-run the eval after every change.
 
 ---
@@ -405,7 +413,7 @@ Changing it is the most effective tuning lever after the thresholds. Re-run the 
  "requested_model":"gemini-3.8-flash","routed_model":"gemini-4-argon","thinking_level":"HIGH",
  "reason":"argon:code_work",
  "signals":{"criteria":{"multistep_reasoning":0.41,"code_work":0.93,"high_stakes":0.04,"agentic_tool_heavy":0.12},
-            "p_argon":0.93,"thinking_score":1.71,"thinking_confidence":0.68,"classifier_ms":118.4,
+            "p_argon":0.93,"thinking_choice":"HIGH","thinking_confidence":0.68,"classifier_ms":118.4,
             "target_model":"gemini-4-argon"},
  "streaming":false,"est_input_tokens":812,"tool_declarations":2,"total_ms":121.0}
 ```
@@ -469,6 +477,7 @@ autorouter/
   config.py       environment-driven configuration
 extproc/service/  CalloutServer SDK, vendored from GoogleCloudPlatform/service-extensions (Apache-2.0)
 tests/            pytest suite, including a real gRPC round trip
+test_ir.py        interactive live check of the classifier + policy (google-genai SDK)
 eval/             labeled prompts and run_eval.py (accuracy, coverage, latency, threshold sweep)
 deploy/           env.sh, 01–05 gcloud scripts, binding template, teardown.sh
 Dockerfile        python:3.13-slim, prebuilt Envoy protos from xds-protos, runs as non-root

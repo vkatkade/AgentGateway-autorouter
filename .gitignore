@@ -4,3 +4,9 @@ __pycache__/
 venv/
 deploy/.rendered/
 eval/results*.jsonl
+
+# Secrets: never commit
+.env
+.env.*
+*.key
+*api-key*
