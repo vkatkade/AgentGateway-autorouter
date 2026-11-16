@@ -265,7 +265,7 @@ git clone <this repo> agw-autorouter && cd agw-autorouter
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 
-python -m pytest -q                                      # 32 tests, no network needed
+python -m pytest -q                                      # 35 tests, no network needed
 GEMINI_API_KEY=... PORT=8080 python -m autorouter.server  # plaintext gRPC on :8080
 GEMINI_API_KEY=... python test_ir.py                      # live Decisions API, interactive (Python 3.11+)
 ```
@@ -306,8 +306,9 @@ source deploy/env.sh
 | 1 | `./deploy/01-bootstrap.sh` | Enables APIs, creates the Artifact Registry repo and service account, and stores the Decisions API key in Secret Manager (prompts for the key). |
 | 2 | `./deploy/02-deploy-cloud-run.sh` | Builds the image with Cloud Build, then deploys Cloud Run with `--use-http2`, port 8080, `min-instances=1`, the secret mounted as `GEMINI_API_KEY`, and **`SHADOW_MODE=true`**. |
 | 3 | `./deploy/03-lb-and-psc.sh` | LB, proxy-only, and PSC NAT subnets; a serverless NEG; an `HTTP2` backend service; the URL map, HTTP proxy, and internal forwarding rule; and a PSC service attachment (`ACCEPT_MANUAL`, with the consumer project allow-listed). |
-| 4 | `./deploy/04-producer-extension.sh` | `gcloud beta service-extensions producer-extensions create`, pointing at the service attachment, with the phase from `PRODUCER_PHASE`. |
+| 4 | `./deploy/04-producer-extension.sh` | Creates the ProducerExtension over the Network Services REST API (no public gcloud command yet), pointing at the service attachment, phase `AUTHZ`, `supportedEvents` from `SUPPORTED_EVENTS` (includes `REQUEST_BODY`). |
 | 5 | `./deploy/05-extension-binding.sh` | Renders `extension-binding.yaml.tmpl` and imports the ExtensionBinding on your Agent Gateway, matching the Vertex hosts in `VERTEX_HOSTS`, with `failOpen: true`. |
+| 6 (optional) | `./deploy/06-test-client.sh` | The reference test client (section 4.8): a second Cloud Run service with Direct VPC egress to the router's internal LB. Needs only steps 1–3. |
 
 The rendered binding looks like this:
 
@@ -370,6 +371,39 @@ To limit blast radius, first set `ROUTABLE_MODELS` to a model ID that only a can
 * **Globally, instantly:** redeploy with `SHADOW_MODE=true`, or delete the binding:
   `gcloud beta service-extensions extension-bindings delete $BINDING_NAME --location=$GATEWAY_LOCATION`.
 * **Everything:** `./deploy/teardown.sh` removes all created resources except the secret and the service account.
+
+
+### 4.8 Test with the reference client (no gateway needed)
+
+`client/` is a small Cloud Run service with a prompt page. It plays Agent Gateway's part so you can exercise the
+deployed router end to end before any binding exists. It uses the same protocol, modeled on the upstream
+reference client (`service-extensions/callouts/python/extproc/example/ext_proc_client.py`):
+
+1. `request_headers`: `:method`, the Vertex `generateContent` `:path`, `:authority`, `content-type`.
+2. `request_body`: the whole JSON body in **one** message with `end_of_stream=true` (the router asks for BUFFERED).
+3. `response_headers`: so the router can return `x-autorouter-model` / `-thinking` / `-reason`.
+4. Apply any `:path` and body mutation, then call Vertex AI with the client's own service account.
+
+If the router is unreachable, the client calls Vertex unchanged, as `failOpen: true` would.
+
+```bash
+source deploy/env.sh
+./deploy/06-test-client.sh        # after steps 1-3
+gcloud run services proxy agw-client --project=$PRODUCER_PROJECT_ID --region=$REGION
+# browse http://localhost:8080
+```
+
+What it deploys:
+
+* Service account `agw-client` with `roles/aiplatform.user` only.
+* Direct VPC egress (`private-ranges-only`) on `$NETWORK`/`$CLIENT_SUBNET`, so it reaches the internal LB
+  (forwarding rule IP, port 80, plaintext gRPC) while Vertex calls go out normally.
+* `--no-allow-unauthenticated`, so the page can't spend your Vertex quota for strangers.
+
+The page lets you pick the model the "agent" asks for, send `x-autorouter: off`, or skip the Vertex call
+(routing only). In shadow mode the request is never rewritten; the decision shows in `x-autorouter-reason`
+(`shadow:argon:code_work`, for example). To see rewrites applied on a test deployment, update the router with
+`SHADOW_MODE=false`.
 
 ---
 
@@ -444,17 +478,27 @@ blowing the latency budget.
 
 Confirm these with the Agent Gateway team before turning off shadow mode:
 
-1. **Body access by phase.** The extension-bindings docs only show `--phase authz`. Confirm which phase delivers
-   `REQUEST_BODY` on Agent → LLM egress and applies body and `:path` mutations; set `PRODUCER_PHASE` to match.
+1. **Body access.** The Network Services API accepts only `AUTHZ` for a ProducerExtension (it lists `TRAFFIC` as
+   not supported), and request bodies are opted into with the required `supportedEvents` list, which
+   `04-producer-extension.sh` sets to include `REQUEST_BODY`. Still confirm the body arrives **buffered** in one
+   message on Agent → LLM egress.
 2. **`failOpen` behavior** for 2P extensions isn't documented. The design assumes the original request flows if
    the callout is unreachable.
 3. **Ordering with Model Armor** on the same path: should screening see the routed request or the original?
-4. **Load balancer frontend.** The scripts use a plaintext HTTP/2 frontend on port 80. Switch to an HTTPS target
-   proxy if the gateway's PSC client requires TLS.
+4. **Load balancer frontend.** The scripts use a plaintext HTTP/2 frontend on port 80. Plaintext gRPC (h2c) from a
+   VPC client through that frontend is verified with the test client; confirm the gateway's PSC client speaks h2c,
+   or switch to an HTTPS target proxy.
 5. **Thinking-level casing** on Vertex REST: toggle with `THINKING_LEVEL_CASE` if Vertex rejects `HIGH`.
 6. **Hydrogen.** No public model ID exists yet. Set `HYDROGEN_MODEL` and `HYDROGEN_THINKING_LEVELS` when it ships.
 
 Known limits of this version:
+
+* **Preview commands.** Public `gcloud` (beta and alpha, as of v570) has no `producer-extensions` or
+  `extension-bindings` commands. `04-producer-extension.sh` uses the REST API; `05-extension-binding.sh` still uses
+  `gcloud beta ... extension-bindings import` and needs the preview gcloud surface or a REST port.
+* **Classifier latency.** Measured from Cloud Run in us-central1, warm Decisions calls took roughly 230–390 ms,
+  with occasional calls over 600 ms. At the default 250 ms `DECISIONS_TIMEOUT_MS`, a large share pass through as
+  `classifier_error`. Measure on your traffic and set the timeout and budget accordingly.
 
 * Vertex **native `generateContent`** only. OpenAI-compatible `/chat/completions` traffic passes through untouched.
 * Requires a **buffered** request body. Streamed bodies are logged and passed through.
@@ -476,10 +520,11 @@ autorouter/
   vertex.py       path parsing and rewrite, feature extraction, redaction, thinkingConfig mutation
   config.py       environment-driven configuration
 extproc/service/  CalloutServer SDK, vendored from GoogleCloudPlatform/service-extensions (Apache-2.0)
-tests/            pytest suite, including a real gRPC round trip
+tests/            pytest suite, including real gRPC round trips (router, and test client <-> router)
+client/           reference test client (Cloud Run): prompt page -> ext_proc -> router -> Vertex AI
 test_ir.py        interactive live check of the classifier + policy (google-genai SDK)
 eval/             labeled prompts and run_eval.py (accuracy, coverage, latency, threshold sweep)
-deploy/           env.sh, 01–05 gcloud scripts, binding template, teardown.sh
+deploy/           env.sh, 01–05 deploy scripts, 06 test client, binding template, teardown.sh
 Dockerfile        python:3.13-slim, prebuilt Envoy protos from xds-protos, runs as non-root
 ```
 

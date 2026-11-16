@@ -38,10 +38,21 @@ export SERVICE_ATTACHMENT="${SERVICE_ATTACHMENT:-${SERVICE}-sa}"
 
 # Service Extensions resources
 export PRODUCER_EXTENSION_NAME="${PRODUCER_EXTENSION_NAME:-autorouter}"
-export PRODUCER_PHASE="${PRODUCER_PHASE:-authz}"   # only phase the docs show today; confirm body access
+export PRODUCER_PHASE="${PRODUCER_PHASE:-AUTHZ}"   # the API accepts only AUTHZ (TRAFFIC is "not supported")
+# Events delivered to the callout; REQUEST_BODY is what gives it the generateContent body.
+export SUPPORTED_EVENTS="${SUPPORTED_EVENTS:-REQUEST_HEADERS,REQUEST_BODY,RESPONSE_HEADERS}"
 export AUTHORITY="${AUTHORITY:-autorouter.internal}"
 export BINDING_NAME="${BINDING_NAME:-autorouter-llm-egress}"
 export AGENT_GATEWAY_NAME="${AGENT_GATEWAY_NAME:-my-agent-gateway}"
 export GATEWAY_LOCATION="${GATEWAY_LOCATION:-$REGION}"
 # Vertex hosts the agent calls. Add every regional host your agents use.
 export VERTEX_HOSTS="${VERTEX_HOSTS:-aiplatform.googleapis.com ${REGION}-aiplatform.googleapis.com}"
+
+# Reference test client (deploy/06-test-client.sh): a second Cloud Run service that plays
+# the gateway's role over ext_proc so you can test the router before a binding exists.
+export CLIENT_SERVICE="${CLIENT_SERVICE:-agw-client}"
+export CLIENT_SA_NAME="${CLIENT_SA_NAME:-agw-client}"
+export CLIENT_SA_EMAIL="${CLIENT_SA_NAME}@${PRODUCER_PROJECT_ID}.iam.gserviceaccount.com"
+export CLIENT_IMAGE="${REGION}-docker.pkg.dev/${PRODUCER_PROJECT_ID}/${AR_REPO}/${CLIENT_SERVICE}:${IMAGE_TAG:-latest}"
+export CLIENT_SUBNET="${CLIENT_SUBNET:-default}"          # subnet in $NETWORK for Direct VPC egress
+export VERTEX_LOCATION="${VERTEX_LOCATION:-global}"
