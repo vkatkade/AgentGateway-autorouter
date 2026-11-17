@@ -23,6 +23,7 @@ import os
 import shlex
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -69,11 +70,38 @@ def read_agent_outcome(out_dir: Path, task: str) -> dict:
           "exception": info.get("exception_str"), "patch": patch, "has_traj": traj.exists()}
 
 
+_PULL_LOCK = threading.Lock()
+
+
+def image_name(task: str) -> str:
+  return f"docker.io/swebench/sweb.eval.x86_64.{task.replace('__', '_1776_').lower()}:latest"
+
+
+def ensure_image(task: str, retries: int = 3) -> str | None:
+  """Pull the instance image once, serialised: parallel `docker run` auto-pulls race and exit 125."""
+  img = image_name(task)
+  with _PULL_LOCK:
+    if subprocess.run(["docker", "image", "inspect", img], capture_output=True).returncode == 0:
+      return None
+    err = ""
+    for i in range(retries):
+      r = subprocess.run(["docker", "pull", "-q", img], capture_output=True, text=True)
+      if r.returncode == 0:
+        return None
+      err = (r.stderr or r.stdout)[-300:]
+      time.sleep(5 * (i + 1))
+    return f"docker pull failed for {img}: {err}"
+
+
 def run_one(args, run_dir: Path, proxy_url: str, task: str) -> dict:
   out_dir = run_dir / "harness" / task
   out_dir.mkdir(parents=True, exist_ok=True)
   cfg = out_dir / "override.yaml"
   cfg.write_text(override_yaml(proxy_url, task, args.step_limit, args.agent_temperature))
+  pull_err = ensure_image(task)
+  if pull_err:
+    return {"task": task, "code": -1, "exit_status": "ImagePullError", "api_calls": 0, "exception": pull_err,
+            "patch": None, "has_traj": False, "duration_s": 0.0}
   cmd = build_command(args, task, out_dir, cfg)
   env = {**os.environ, "MSWEA_COST_TRACKING": "ignore_errors", "MSWEA_SILENT_STARTUP": "1",
          "MSWEA_CONFIGURED": "true"}
