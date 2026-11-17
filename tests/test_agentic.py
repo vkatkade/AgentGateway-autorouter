@@ -288,6 +288,13 @@ def test_vertex_client_credential_failure_is_not_retried(monkeypatch):
   assert status == 401 and attempts == 1 and "no adc" in payload["error"]["message"]
 
 
+def test_vertex_client_uses_static_access_token(monkeypatch):
+  from eval.agentic.proxy import VertexClient
+  monkeypatch.setenv("VERTEX_ACCESS_TOKEN", "ya29.static")
+  vc = VertexClient("p1", "global", 5.0, 1)
+  assert vc._token() == "ya29.static" and vc.project_id() == "p1"
+
+
 def test_vertex_client_retries_transient_statuses(monkeypatch):
   import eval.agentic.proxy as px
   seen = []

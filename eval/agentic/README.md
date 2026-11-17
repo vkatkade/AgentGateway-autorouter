@@ -62,7 +62,7 @@ Model IDs and thresholds come from the same environment variables as the router 
 pip install -r requirements-dev.txt        # proxy, router protos, tests
 python -m pytest tests/test_agentic.py     # offline, no keys
 
-gcloud auth application-default login      # Vertex calls
+gcloud auth application-default login      # Vertex calls (or: export VERTEX_ACCESS_TOKEN=$(gcloud auth print-access-token), ~1 hour, no refresh)
 export PROJECT_ID=my-project VERTEX_LOCATION=global
 ```
 
