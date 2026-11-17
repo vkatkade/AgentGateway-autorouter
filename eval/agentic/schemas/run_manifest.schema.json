@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RunManifest",
+  "type": "object",
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "arm": {
+      "type": "string"
+    },
+    "benchmark": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "router_mode": {
+      "type": "string"
+    },
+    "router_target": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "argon_model": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "hydrogen_model": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "requested_model": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seed": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "task_ids": {
+      "type": "array"
+    },
+    "trials": {
+      "type": "integer"
+    },
+    "harness": {
+      "type": "object"
+    },
+    "router_env": {
+      "type": "object"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "run_id",
+    "arm",
+    "benchmark",
+    "created_at"
+  ],
+  "additionalProperties": true
+}

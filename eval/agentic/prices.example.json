@@ -1,0 +1,5 @@
+{
+  "_comment": "Placeholder values - replace with the real per-million-token prices for your project before reading dollar figures. Keys are Vertex model IDs. Thinking tokens are billed as output.",
+  "gemini-4-argon":   {"input_per_m": 1.00, "cached_input_per_m": 0.25, "output_per_m": 4.00},
+  "gemini-3.8-flash": {"input_per_m": 0.25, "cached_input_per_m": 0.06, "output_per_m": 1.00}
+}

@@ -422,6 +422,23 @@ The page lets you pick the model the "agent" asks for, send `x-autorouter: off`,
 (`shadow:argon:code_work`, for example). To see rewrites applied on a test deployment, update the router with
 `SHADOW_MODE=false`.
 
+### 4.9 Evaluate on agent benchmarks (τ³-Banking, SWE-bench Verified)
+
+`eval/run_eval.py` scores single prompts. `eval/agentic/` evaluates the router on agent loops, where one task makes
+many calls and the router decides on each one. A small OpenAI-compatible proxy sits where the gateway would,
+sends every call through the **deployed** router over ext_proc, and records the decision, thinking level, tokens
+and latency per call. Runners drive τ³-Banking (all 97 tasks) and a pinned 100-task SWE-bench Verified sample
+across five arms (always-Argon, always-Hydrogen, Argon at MEDIUM, router, router without the thinking logic), and
+`analyze.py` compares them paired, with confidence intervals.
+
+```bash
+python -m pytest tests/test_agentic.py        # offline
+python -m eval.agentic.run_tau3 --help        # then run_swebench, analyze
+```
+
+See [eval/agentic/README.md](eval/agentic/README.md) for the setup, the arms, the results format and the pilot
+checklist to run before a full run.
+
 ---
 
 ## 5. Configuration reference
@@ -544,6 +561,7 @@ tests/            pytest suite, including real gRPC round trips (router, and tes
 client/           reference test client (Cloud Run): prompt page -> ext_proc -> router -> Vertex AI
 test_ir.py        interactive live check of the classifier + policy (google-genai SDK)
 eval/             labeled prompts and run_eval.py (accuracy, coverage, latency, threshold sweep)
+eval/agentic/     τ³-Banking + SWE-bench Verified evals: proxy, runners, results schema, paired analysis
 deploy/           env.sh, 01–05 deploy scripts, 06 test client, binding template, teardown.sh
 Dockerfile        python:3.13-slim, prebuilt Envoy protos from xds-protos, runs as non-root
 ```
