@@ -70,8 +70,13 @@ class VertexClient:
   def _token(self) -> str:
     with self._lock:
       if self._creds is None:
-        self._creds, proj = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
-        self.project = self.project or proj or ""
+        static = os.getenv("VERTEX_ACCESS_TOKEN")
+        if static:  # a pasted ~1 hour access token instead of ADC (it will not refresh)
+          from google.oauth2.credentials import Credentials
+          self._creds = Credentials(token=static)
+        else:
+          self._creds, proj = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+          self.project = self.project or proj or ""
       if not self._creds.valid:
         self._creds.refresh(google.auth.transport.requests.Request())
       return self._creds.token
