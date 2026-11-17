@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CallRecord",
+  "type": "object",
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "arm": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "ts": {
+      "type": "number"
+    },
+    "requested_model": {
+      "type": "string"
+    },
+    "routed_model": {
+      "type": "string"
+    },
+    "benchmark": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "trial": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "seq": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "schema_version": {
+      "type": "integer"
+    },
+    "router_mode": {
+      "type": "string"
+    },
+    "router_ok": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "router_error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "router_ms": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "router_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "router_headers": {
+      "type": "object"
+    },
+    "classifier_ms": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "p_deep": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "thinking_source": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "rewritten": {
+      "type": "boolean"
+    },
+    "agent_thinking_level": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "thinking_level": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "n_tools": {
+      "type": "integer"
+    },
+    "est_input_tokens": {
+      "type": "integer"
+    },
+    "vertex_status": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "vertex_ms": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "attempts": {
+      "type": "integer"
+    },
+    "signature_retry": {
+      "type": "boolean"
+    },
+    "finish_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "prompt_tokens": {
+      "type": "integer"
+    },
+    "output_tokens": {
+      "type": "integer"
+    },
+    "thoughts_tokens": {
+      "type": "integer"
+    },
+    "cached_tokens": {
+      "type": "integer"
+    },
+    "total_tokens": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "run_id",
+    "arm",
+    "task_id",
+    "ts",
+    "requested_model",
+    "routed_model"
+  ],
+  "additionalProperties": true
+}

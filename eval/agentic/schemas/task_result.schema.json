@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TaskResult",
+  "type": "object",
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "arm": {
+      "type": "string"
+    },
+    "benchmark": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "trial": {
+      "type": "integer"
+    },
+    "score": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "termination": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "duration_s": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "extra": {
+      "type": "object"
+    },
+    "schema_version": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "run_id",
+    "arm",
+    "benchmark",
+    "task_id",
+    "success"
+  ],
+  "additionalProperties": true
+}

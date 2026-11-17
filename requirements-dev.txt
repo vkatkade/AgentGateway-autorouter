@@ -8,3 +8,6 @@ google-genai>=3.2; python_version >= "3.11"
 flask>=3.0
 google-auth>=2.40
 requests>=2.32
+
+# Agentic evals (eval/agentic). tau2-bench, mini-swe-agent and swebench are installed
+# separately, see eval/agentic/README.md.
